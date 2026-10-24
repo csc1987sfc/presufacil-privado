@@ -1,0 +1,16 @@
+{
+  "name": "PresuFácil Privado",
+  "short_name": "Gastos Priv",
+  "description": "Control de nómina, gastos fijos y tarjetas multiusuario",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#10B981",
+  "icons": [
+    {
+      "src": "cerdito.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
