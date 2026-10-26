@@ -305,8 +305,9 @@
     let estadoApp = obtenerEstadoPorDefecto();
 
     // --- LÓGICA DE USUARIOS Y CONTRASEÑAS ---
-    function convertirUsuarioACorreo(usuarioInput) {
-      let limpio = usuarioInput.trim().toLowerCase();
+   function convertirUsuarioACorreo(usuarioInput) {
+      // Solo permitimos letras, números, puntos, guiones y arroba
+      let limpio = usuarioInput.trim().toLowerCase().replace(/[^a-z0-9._@-]/g, '');
       if (!limpio.includes('@')) {
         return limpio + '@presufacil.com';
       }
