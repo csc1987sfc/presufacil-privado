@@ -477,11 +477,17 @@
       const { data: listaUsuarios, error } = await supabaseCliente.rpc('listar_usuarios_admin');
 
       if (error) {
-        contenedor.innerHTML = '<p class="text-xs text-red-500 text-center py-4">Error al cargar la lista.</p>';
+        // AHORA MOSTRAMOS EL ERROR EXACTO EN ROJO
+        contenedor.innerHTML = `<p class="text-xs text-red-500 text-center py-4 font-bold">❌ Error: ${error.message}</p>`;
         return;
       }
 
       contenedor.innerHTML = '';
+      if (!listaUsuarios || listaUsuarios.length === 0) {
+         contenedor.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No hay usuarios.</p>';
+         return;
+      }
+
       listaUsuarios.forEach(u => {
         const nombreLimpio = textoSeguro(u.email.replace('@presufacil.com', ''));
         const idUsuarioSeguro = textoSeguro(u.id).replace(/'/g, "\\'");
