@@ -1,951 +1,221 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Mis Gastos - PresuFácil Privado</title>
-  
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#10B981">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Librería oficial de Supabase para gestionar usuarios y contraseñas de forma segura -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
-  <style>
-    .modal-oculto { display: none !important; }
-    .modal-visible { display: flex !important; }
-    
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { 
-      -webkit-appearance: none; 
-      margin: 0; 
-    }
-    input[type=number] {
-      -moz-appearance: textfield;
-    }
-  </style>
-</head>
-<body class="bg-gray-50 text-gray-800 font-sans pb-10">
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
-  <!-- ================= PANTALLA DE USUARIO Y CONTRASEÑA ================= -->
-  <div id="pantalla-login" class="min-h-screen flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 w-full max-w-sm">
-      <div class="flex flex-col items-center mb-6">
-        <img src="cerdito.png" alt="Cerdito" class="w-16 h-16 rounded-full bg-emerald-50 p-1 shadow-sm object-cover mb-2">
-        <h1 class="text-2xl font-bold text-gray-800">PresuFácil</h1>
-        <p class="text-xs text-gray-400">Acceso privado multiusuario</p>
-      </div>
+function normalizarFecha(fechaStr: any) {
+  if (!fechaStr || typeof fechaStr !== 'string') return "";
+  const limpio = fechaStr.trim();
+  if (!limpio.includes('/')) return limpio;
+  const partes = limpio.split('/');
+  if (partes.length < 2) return limpio;
+  const dia = partes[0].trim().padStart(2, '0');
+  const mes = partes[1].trim().padStart(2, '0');
+  return `${dia}/${mes}`;
+}
 
-      <div id="mensaje-login" class="hidden text-xs font-semibold p-3 rounded-lg mb-4 text-center"></div>
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
 
-      <div class="space-y-4">
-        <div>
-          <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Nombre de Usuario</label>
-          <input type="text" id="login-usuario" placeholder="Ej: pedro, maria..." 
-                 class="w-full border border-gray-300 rounded-lg p-3 text-sm outline-none focus:border-emerald-500">
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Contraseña (mín. 6 caracteres)</label>
-          <input type="password" id="login-password" placeholder="••••••" 
-                 class="w-full border border-gray-300 rounded-lg p-3 text-sm outline-none focus:border-emerald-500">
-        </div>
-
-        <div class="pt-2 space-y-2">
-          <button onclick="iniciarSesion()" id="btn-entrar" class="w-full bg-emerald-500 text-white font-bold py-3 rounded-lg shadow hover:bg-emerald-600 transition-colors">
-            Entrar a mi cuenta
-          </button>
-          <button onclick="registrarUsuario()" id="btn-registro" class="w-full bg-gray-100 text-gray-700 font-semibold py-2.5 rounded-lg hover:bg-gray-200 transition-colors text-sm">
-            Soy nuevo: Crear cuenta
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ================= APLICACIÓN PRINCIPAL (OCULTA HASTA ENTRAR) ================= -->
-  <div id="contenido-app" class="hidden max-w-md mx-auto p-4 space-y-6 mt-2 relative">
-    
-    <!-- Barra superior con nombre del usuario conectado y botón de Salir -->
-    <div class="flex items-center justify-between bg-white px-3 py-2 rounded-xl shadow-sm border border-gray-100">
-      <span class="text-xs font-semibold text-gray-600">👤 Usuario: <strong id="nombre-usuario-actual" class="text-emerald-600"></strong></span>
-      <button onclick="cerrarSesion()" class="text-xs font-bold text-gray-500 hover:text-red-500 bg-gray-100 px-2.5 py-1 rounded-lg transition-colors">
-        Cerrar sesión 🚪
-      </button>
-    </div>
-
-    <div class="flex items-center justify-between mb-2">
-      <div class="flex items-center gap-3">
-        <img src="cerdito.png" alt="Cerdito" class="w-12 h-12 rounded-full bg-white p-1 shadow-sm object-cover">
-        <div class="flex flex-col">
-          <h1 class="text-xl font-bold text-gray-800 flex items-center gap-1">
-            PresuFácil <span id="estado-nube" class="text-[10px] text-green-500 ml-1 mt-1">☁️ Sincronizado</span>
-          </h1>
-          <span id="fecha-hoy" class="text-[10px] font-bold text-blue-600 uppercase tracking-wide mt-0.5"></span>
-        </div>
-      </div>
-      <button onclick="empezarMesNuevo()" class="text-red-500 hover:text-red-700 text-sm flex items-center gap-1 font-semibold bg-red-50 px-2 py-1 rounded-lg shadow-sm">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-        Cerrar Mes
-      </button>
-    </div>
-
-    <div id="tarjeta-saldo" class="bg-emerald-500 text-white rounded-2xl p-6 shadow-lg transition-colors duration-500">
-      <h2 class="text-white/90 font-semibold text-xs uppercase tracking-wider mb-1">Dinero Real Disponible</h2>
-      <p class="text-4xl font-extrabold mb-6" id="saldo-total">0,00 €</p>
-      
-      <div class="flex justify-between text-sm text-white/90 border-t border-white/20 pt-3">
-        <div>
-          <p class="text-xs text-white/70">INGRESO (+)</p>
-          <p class="font-bold" id="total-ingreso">0,00 €</p>
-        </div>
-        <div>
-          <p class="text-xs text-white/70">FIJOS (-)</p>
-          <p class="font-bold" id="total-fijos">0,00 €</p>
-        </div>
-        <div>
-          <p class="text-xs text-white/70">TARJETAS (-)</p>
-          <p class="font-bold" id="total-tarjetas">0,00 €</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="bg-emerald-100 text-emerald-600 p-2 rounded-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
-        </div>
-        <div>
-          <h3 class="font-bold text-gray-800 text-sm">Nómina / Ingresos</h3>
-        </div>
-      </div>
-      <div class="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-2">
-        <span class="text-gray-400 pl-2 pr-1 font-bold">€</span>
-        <input type="number" id="nomina" value="0" step="0.01" class="w-full bg-transparent outline-none font-bold text-gray-800 text-lg" 
-               oninput="recalcularTotal()" onchange="guardarNomina(this.value)">
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-      <div class="flex justify-between items-center mb-4">
-        <div class="flex items-center gap-3">
-          <div class="bg-blue-100 text-blue-600 p-2 rounded-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2zM10 8.5a.5.5 0 11-1 0 .5.5 0 011 0zm5 5a.5.5 0 11-1 0 .5.5 0 011 0z"></path></svg>
-          </div>
-          <div>
-            <h3 class="font-bold text-gray-800 text-sm">Gastos Fijos</h3>
-          </div>
-        </div>
-        <button onclick="abrirVentanaGasto()" class="bg-blue-600 text-white w-8 h-8 rounded-full font-bold flex items-center justify-center shadow-sm hover:bg-blue-700">+</button>
-      </div>
-      <div class="space-y-3" id="lista-gastos-fijos">
-        <div class="text-center text-sm text-gray-400 py-4">⏳ Conectando con la nube...</div>
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="bg-red-100 text-red-600 p-2 rounded-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-        </div>
-        <div>
-          <h3 class="font-bold text-gray-800 text-sm">Gastos con Tarjeta</h3>
-          <p class="text-xs text-gray-400">Sube foto o añádelo a mano</p>
-        </div>
-      </div>
-
-      <div class="bg-gray-50 border rounded-xl p-4 mt-2 shadow-inner">
-        <div class="flex justify-between items-center mb-3">
-          <span class="font-bold text-gray-700 text-sm flex items-center gap-2">
-            <span class="w-6 h-4 bg-blue-800 rounded text-[8px] text-white flex items-center justify-center font-bold italic">VISA</span>
-            Movimientos Tarjeta
-          </span>
-          <span class="font-bold text-red-500 text-lg" id="gasto-visa">0,00 €</span>
-        </div>
-        
-        <button id="btn-foto" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg shadow-sm hover:bg-blue-700 flex justify-center items-center gap-2 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-          Subir Captura de Tarjeta
-        </button>
-        <input type="file" id="input-foto" accept="image/*" class="hidden">
-
-        <div class="relative flex py-4 items-center">
-          <div class="flex-grow border-t border-gray-200"></div>
-          <span class="flex-shrink-0 mx-4 text-gray-400 text-[10px] font-bold uppercase tracking-wider">O añade a mano</span>
-          <div class="flex-grow border-t border-gray-200"></div>
-        </div>
-
-        <div class="flex flex-col gap-3">
-          <div class="flex gap-2">
-            <input type="text" id="manual-comercio" placeholder="Lugar (Ej: Mercadona)" class="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-blue-500 shadow-sm">
-            <div class="flex flex-col items-end gap-1 relative">
-              <div class="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-2 h-[42px] w-28 shadow-sm">
-                <input type="number" id="manual-precio" step="0.01" placeholder="0" title="Si es devolución añade un -" class="w-full bg-transparent text-right outline-none text-gray-700 text-sm font-bold">
-                <span class="text-gray-400 text-xs font-bold pr-1">€</span>
-              </div>
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <input type="date" id="manual-fecha" class="border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-blue-500 text-gray-600 flex-1 shadow-sm" title="Fecha del ticket">
-            <button onclick="añadirGastoManual()" class="bg-gray-800 text-white font-semibold rounded-lg text-sm hover:bg-gray-900 transition-colors shadow-sm flex items-center justify-center px-4">
-              Añadir
-            </button>
-          </div>
-          <div class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
-             <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wide w-full flex-1">¿Fecha cargo banco? (Opcional):</span>
-             <input type="date" id="manual-fecha-cargo" class="border-b border-gray-300 p-1 text-xs outline-none text-blue-600 focus:border-blue-500 bg-transparent w-32">
-          </div>
-        </div>
-        
-        <div id="lista-movimientos-visa" class="mt-4 border-t border-gray-200 pt-3 space-y-2"></div>
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="bg-purple-100 text-purple-600 p-2 rounded-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-        </div>
-        <div>
-          <h3 class="font-bold text-gray-800 text-sm">Historial de Meses</h3>
-          <p class="text-xs text-gray-400">Tus cierres anteriores</p>
-        </div>
-      </div>
-      <div id="lista-meses-pasados" class="space-y-3 border-t border-gray-100 pt-3"></div>
-    </div>
-
-  </div>
-
-  <!-- Ventana modal para añadir gasto fijo -->
-  <div id="ventana-nuevo-gasto" class="modal-oculto fixed inset-0 bg-black bg-opacity-50 z-50 items-center justify-center p-4">
-    <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl relative">
-      <h3 class="text-lg font-bold text-gray-800 mb-4">Añadir Nuevo Gasto Fijo</h3>
-      <input type="text" id="input-nombre-gasto" placeholder="Ejemplo: Netflix, Gimnasio..." class="w-full border border-gray-300 rounded-lg p-3 text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-6">
-      <div class="flex gap-3 justify-end">
-        <button onclick="cerrarVentanaGasto()" class="px-4 py-2 text-gray-500 font-semibold hover:bg-gray-100 rounded-lg">Cancelar</button>
-        <button onclick="confirmarNuevoGasto()" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow-sm">Añadir a la nube</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
+  try {
+    // --- NUEVO: PORTERO DE SEGURIDAD (FALLO 2) ---
+    // Comprobamos que la petición trae el carnet de un usuario que ha iniciado sesión
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "No autorizado: Falta iniciar sesión." }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      })
     }
 
-    // --- TUS DATOS DE SUPABASE ---
-    const SUPABASE_URL = "https://dmrzxlhnezdyjiwkieff.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcnp4bGhuZXpkeWppd2tpZWZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5MzQxODksImV4cCI6MjEwODUxMDE4OX0.ek6rvPF3_Q7yTHC8pWAZxpa4qsE4H4RozKmn-hXtjNo";
-    
-    const supabaseCliente = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    let usuarioActual = null;
-    let conexionNubeActiva = false;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const respUsuario = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        'Authorization': authHeader,
+        'apikey': supabaseAnonKey,
+      },
+    })
 
-    function obtenerEstadoPorDefecto() {
-      return {
-        nomina: 0,
-        saldo_visa: 0, 
-        historial_visa: [],
-        historial_meses: [], 
-        gastos_fijos: [
-          { id: "1", nombre: "Alquiler/Hipoteca", valor: 0 },
-          { id: "2", nombre: "Recibo de la Luz", valor: 0 },
-          { id: "3", nombre: "Agua y Basura", valor: 0 },
-          { id: "4", nombre: "Internet y Móvil", valor: 0 }
-        ],
-        contador_fijos: 5
-      };
+    if (!respUsuario.ok) {
+      return new Response(JSON.stringify({ error: "Sesión no válida o caducada. Cierra sesión y vuelve a entrar." }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      })
+    }
+    // ----------------------------------------------
+
+    const bodyReq = await req.json()
+    let imagen = bodyReq.imagen || ""
+
+    if (!imagen || imagen.length < 100) {
+      throw new Error("La imagen llegó vacía desde la web.")
     }
 
-    let estadoApp = obtenerEstadoPorDefecto();
-
-    // --- LÓGICA DE USUARIOS Y CONTRASEÑAS ---
-    function convertirUsuarioACorreo(usuarioInput) {
-      let limpio = usuarioInput.trim().toLowerCase();
-      if (!limpio.includes('@')) {
-        return limpio + '@presufacil.com';
-      }
-      return limpio;
+    // Límite de seguridad: bloqueamos archivos mayores de ~10 MB para evitar ataques
+    if (imagen.length > 15000000) {
+      throw new Error("La imagen es demasiado pesada. Sube una captura normal.")
     }
 
-    function mostrarMensajeLogin(texto, esError = true) {
-      const caja = document.getElementById('mensaje-login');
-      caja.innerText = texto;
-      caja.classList.remove('hidden', 'bg-red-100', 'text-red-600', 'bg-emerald-100', 'text-emerald-700');
-      if (esError) {
-        caja.classList.add('bg-red-100', 'text-red-600');
-      } else {
-        caja.classList.add('bg-emerald-100', 'text-emerald-700');
-      }
+    if (imagen.includes(',')) {
+      imagen = imagen.split(',')[1]
+    }
+    imagen = imagen.replace(/\s/g, '')
+
+    let mimeType = "image/jpeg"
+    if (imagen.startsWith("iVBOR")) {
+      mimeType = "image/png"
+    } else if (imagen.startsWith("UklGR")) {
+      mimeType = "image/webp"
     }
 
-    async function iniciarSesion() {
-      const usu = document.getElementById('login-usuario').value;
-      const pass = document.getElementById('login-password').value;
-      if (!usu || !pass) {
-        mostrarMensajeLogin("Por favor, escribe tu usuario y contraseña.");
-        return;
-      }
-
-      const emailFormateado = convertirUsuarioACorreo(usu);
-      const { data, error } = await supabaseCliente.auth.signInWithPassword({
-        email: emailFormateado,
-        password: pass
-      });
-
-      if (error) {
-        mostrarMensajeLogin("❌ Usuario o contraseña incorrectos.");
-      } else {
-        entrarEnLaApp(data.user);
-      }
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
+    if (!GEMINI_API_KEY) {
+      throw new Error("Falta guardar la clave GEMINI_API_KEY en Secrets.")
     }
 
-    async function registrarUsuario() {
-      const usu = document.getElementById('login-usuario').value;
-      const pass = document.getElementById('login-password').value;
-      if (!usu || pass.length < 6) {
-        mostrarMensajeLogin("Escribe un nombre de usuario y una contraseña de al menos 6 caracteres.");
-        return;
-      }
+    const modelos = [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+    ]
 
-      const emailFormateado = convertirUsuarioACorreo(usu);
-      const { data, error } = await supabaseCliente.auth.signUp({
-        email: emailFormateado,
-        password: pass
-      });
+    const urlBase = 'https://generativelanguage.googleapis.com/v1beta/models/'
 
-      if (error) {
-        if (error.message.includes("already registered")) {
-          mostrarMensajeLogin("⚠️ Ese nombre de usuario ya está ocupado. Elige otro o pulsa en 'Entrar'.");
-        } else {
-          mostrarMensajeLogin("⚠️ Error: " + error.message);
-        }
-      } else if (data.user) {
-        mostrarMensajeLogin("✅ ¡Cuenta creada con éxito! Entrando...", false);
-        entrarEnLaApp(data.user);
-      }
-    }
+    let arrayFinal: any[] = []
+    let lecturaExitosa = false
+    let registroDebug: string[] = []
 
-    async function cerrarSesion() {
-      await supabaseCliente.auth.signOut();
-      usuarioActual = null;
-      estadoApp = obtenerEstadoPorDefecto();
-      document.getElementById('contenido-app').classList.add('hidden');
-      document.getElementById('pantalla-login').classList.remove('hidden');
-      document.getElementById('login-password').value = '';
-    }
+    const partesFecha = new Intl.DateTimeFormat('es-ES', {
+      timeZone: 'Europe/Madrid',
+      day: 'numeric',
+      month: 'numeric'
+    }).formatToParts(new Date())
 
-    async function entrarEnLaApp(user) {
-      usuarioActual = user;
-      const nombreCorto = user.email.replace('@presufacil.com', '');
-      document.getElementById('nombre-usuario-actual').innerText = nombreCorto;
+    const diaActual = parseInt(partesFecha.find((p: any) => p.type === 'day')!.value, 10)
+    const mesActualNum = parseInt(partesFecha.find((p: any) => p.type === 'month')!.value, 10)
+    const mesActual = mesActualNum.toString().padStart(2, '0')
+    const mesAnterior = (mesActualNum === 1 ? 12 : mesActualNum - 1).toString().padStart(2, '0')
 
-      document.getElementById('pantalla-login').classList.add('hidden');
-      document.getElementById('contenido-app').classList.remove('hidden');
-
-      document.getElementById('manual-fecha').valueAsDate = new Date();
-      const fechaHoyFormateada = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-      document.getElementById('fecha-hoy').innerText = fechaHoyFormateada;
-
-      estadoApp = obtenerEstadoPorDefecto();
-      await cargarDesdeNube();
-    }
-
-    window.onload = async () => {
-      const { data: { session } } = await supabaseCliente.auth.getSession();
-      if (session && session.user) {
-        entrarEnLaApp(session.user);
-      }
-    };
-
-    // --- CONEXIÓN A LA TABLA PRIVADA (memoria_usuarios) ---
-    async function cargarDesdeNube() {
-      if (!usuarioActual) return;
+    for (const modelo of modelos) {
       try {
-        const { data, error } = await supabaseCliente
-          .from('memoria_usuarios')
-          .select('contenido')
-          .eq('user_id', usuarioActual.id)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (data && data.contenido) {
-          let nube = data.contenido;
-          estadoApp.nomina = nube.nomina !== undefined ? nube.nomina : estadoApp.nomina;
-          estadoApp.historial_visa = nube.historial_visa || [];
-          estadoApp.historial_meses = nube.historial_meses || [];
-          if (nube.gastos_fijos) {
-            estadoApp.gastos_fijos = nube.gastos_fijos;
-            estadoApp.contador_fijos = nube.contador_fijos || 5;
-          }
-          conexionNubeActiva = true;
-        } else {
-          conexionNubeActiva = true;
-          await guardarEnNube();
-        }
-
-        document.getElementById('estado-nube').innerText = "☁️ Sincronizado";
-        document.getElementById('estado-nube').classList.replace('text-orange-500', 'text-green-500');
-        dibujarInterfaz();
-      } catch (error) {
-        console.error("Modo sin conexión", error);
-        conexionNubeActiva = false;
-        document.getElementById('estado-nube').innerText = "⚠️ Sin internet (Modo Lectura)";
-        document.getElementById('estado-nube').classList.replace('text-green-500', 'text-orange-500');
-        dibujarInterfaz();
-      }
-    }
-
-    async function guardarEnNube() {
-      if (!conexionNubeActiva || !usuarioActual) {
-        alert("⚠️ Estás sin conexión. Por seguridad, no se pueden guardar cambios hasta que vuelva internet.");
-        return;
-      }
-
-      try {
-        document.getElementById('estado-nube').innerText = "🔄 Sincronizando...";
-        const { error } = await supabaseCliente
-          .from('memoria_usuarios')
-          .upsert(
-            { user_id: usuarioActual.id, contenido: estadoApp },
-            { onConflict: 'user_id' }
-          );
-
-        if (error) throw error;
-        setTimeout(() => { document.getElementById('estado-nube').innerText = "☁️ Sincronizado"; }, 800);
-      } catch (error) {
-        console.error("Error al guardar en la nube", error);
-      }
-    }
-
-    // --- FUNCIONES DE LA APLICACIÓN ---
-    function textoSeguro(texto) {
-      const div = document.createElement('div');
-      div.textContent = texto;
-      return div.innerHTML;
-    }
-
-    function ordenarTicketsPorFecha(listaTickets) {
-      const hoy = new Date();
-      const mesActual = hoy.getMonth() + 1;
-      const anioActual = hoy.getFullYear();
-
-      return [...listaTickets].sort((a, b) => {
-        const fechaStrA = a.includes('|') ? a.split('|')[0] : a.split('-')[0];
-        const fechaStrB = b.includes('|') ? b.split('|')[0] : b.split('-')[0];
-
-        const [diaA, mesA] = fechaStrA.split('/').map(n => parseInt(n, 10) || 1);
-        const [diaB, mesB] = fechaStrB.split('/').map(n => parseInt(n, 10) || 1);
-
-        const anioA = (mesActual === 1 && mesA === 12) ? anioActual - 1 : anioActual;
-        const anioB = (mesActual === 1 && mesB === 12) ? anioActual - 1 : anioActual;
-
-        const tiempoA = new Date(anioA, mesA - 1, diaA).getTime();
-        const tiempoB = new Date(anioB, mesB - 1, diaB).getTime();
-
-        return tiempoB - tiempoA; 
-      });
-    }
-
-    function esGastoPendiente(p_fecha_cargo, p_fecha_compra) {
-      if (!p_fecha_cargo) return false;
-      
-      let fParts = p_fecha_cargo.split('/');
-      let diaCargo = parseInt(fParts[0], 10);
-      let mesCargo = parseInt(fParts[1], 10);
-      
-      let hoy = new Date();
-      hoy.setHours(0, 0, 0, 0);
-      let anioCargo = hoy.getFullYear();
-
-      if (p_fecha_compra && p_fecha_compra.includes('/')) {
-        let cParts = p_fecha_compra.split('/');
-        let mesCompra = parseInt(cParts[1], 10);
-        
-        if (mesCompra > mesCargo) {
-          if (hoy.getMonth() + 1 === mesCompra) {
-            anioCargo = hoy.getFullYear() + 1;
-          }
-        } else {
-          if (hoy.getMonth() + 1 === 1 && mesCompra === 12) {
-            anioCargo = hoy.getFullYear() - 1;
-          }
-        }
-      } else if (hoy.getMonth() === 11 && mesCargo === 1) {
-        anioCargo = hoy.getFullYear() + 1;
-      }
-
-      let fDate = new Date(anioCargo, mesCargo - 1, diaCargo);
-      return fDate > hoy;
-    }
-
-    function obtenerIcono(nombre) {
-      const n = nombre.toLowerCase();
-      if (n.includes('mercadona') || n.includes('carrefour') || n.includes('aldi') || n.includes('lidl') || n.includes('cash') || n.includes('super')) return '🛒';
-      if (n.includes('repsol') || n.includes('cepsa') || n.includes('gasolina') || n.includes('glp') || n.includes('bp') || n.includes('shell')) return '⛽';
-      if (n.includes('farmacia') || n.includes('salud') || n.includes('medico')) return '💊';
-      if (n.includes('luz') || n.includes('endesa') || n.includes('iberdrola') || n.includes('energia')) return '💡';
-      if (n.includes('agua') || n.includes('emasesa')) return '💧';
-      if (n.includes('internet') || n.includes('movil') || n.includes('vodafone') || n.includes('orange') || n.includes('movistar') || n.includes('digi')) return '📱';
-      if (n.includes('coche') || n.includes('seguro') || n.includes('taller') || n.includes('dacia') || n.includes('jogger')) return '🚗';
-      if (n.includes('netflix') || n.includes('spotify') || n.includes('cine') || n.includes('prime')) return '🍿';
-      if (n.includes('amazon') || n.includes('aliexpress') || n.includes('compra')) return '📦';
-      if (n.includes('hipoteca') || n.includes('alquiler') || n.includes('casa')) return '🏠';
-      return '🧾';
-    }
-
-    function dibujarInterfaz() {
-      document.getElementById('nomina').value = estadoApp.nomina;
-      
-      const contenedorFijos = document.getElementById('lista-gastos-fijos');
-      contenedorFijos.innerHTML = ''; 
-      
-      estadoApp.gastos_fijos.forEach(gasto => {
-        const nombreProtegido = textoSeguro(gasto.nombre);
-        let html = `
-        <div class="flex justify-between items-center border-b pb-3 border-gray-100 pt-2">
-          <span class="text-sm font-semibold text-gray-700 truncate flex-1 pr-2">${obtenerIcono(gasto.nombre)} ${nombreProtegido}</span>
-          <div class="flex items-center gap-2">
-            <div class="flex items-center gap-1 bg-gray-100 px-2 py-1.5 rounded-lg border border-gray-200 shadow-inner">
-              <input type="number" id="caja-gasto-${gasto.id}" step="0.01" value="${gasto.valor}" 
-                     class="w-14 bg-transparent text-right outline-none text-gray-800 font-bold text-base" 
-                     oninput="recalcularTotal()" 
-                     onchange="guardarGasto('${gasto.id}', this.value)">
-              <span class="text-gray-400 font-bold text-sm">€</span>
-            </div>
-            <button onclick="borrarGasto('${gasto.id}')" class="text-red-300 hover:text-red-500 bg-red-50 rounded-md p-1.5 transition-colors shadow-sm">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-            </button>
-          </div>
-        </div>`;
-        contenedorFijos.insertAdjacentHTML('beforeend', html);
-      });
-
-      const listaVisa = document.getElementById('lista-movimientos-visa');
-      if (estadoApp.historial_visa && estadoApp.historial_visa.length > 0) {
-        listaVisa.innerHTML = '<h4 class="text-[10px] font-bold text-gray-400 uppercase mb-2 tracking-wider">Últimos Tickets</h4>';
-        const ticketsOrdenados = ordenarTicketsPorFecha(estadoApp.historial_visa);
-
-        ticketsOrdenados.forEach(idGasto => {
-           let p_fecha, p_comercio, p_precio, p_fecha_cargo;
-           if (idGasto.includes('|')) {
-               const partes = idGasto.split('|');
-               p_fecha = partes[0]; 
-               p_comercio = partes[1]; 
-               p_precio = partes[2];
-               p_fecha_cargo = partes[3]; 
-           } else {
-               const partes = idGasto.split('-');
-               p_fecha = partes[0];
-               p_precio = partes[partes.length - 1]; 
-               p_comercio = partes.slice(1, partes.length - 1).join('-'); 
-           }
-
-           if (p_precio !== undefined) {
-              const icono = obtenerIcono(p_comercio);
-              const comercioProtegido = textoSeguro(p_comercio.toUpperCase());
-              const fechaProtegida = textoSeguro(p_fecha);
-              const idSeguro = idGasto.replace(/'/g, "\\'");
-              let esPendiente = esGastoPendiente(p_fecha_cargo, p_fecha);
-              
-              let valorNumerico = Number(p_precio);
-              let esDevolucion = valorNumerico < 0;
-              let valorAbsoluto = Math.abs(valorNumerico).toFixed(2).replace('.', ',');
-              let signoMostrado = esDevolucion ? "+" : "-";
-              
-              let colorPrecioNormal = esDevolucion ? "text-emerald-500" : "text-red-500";
-              let colorPrecioPendiente = esDevolucion ? "text-emerald-400" : "text-orange-400";
-              let colorFinal = esPendiente ? colorPrecioPendiente : colorPrecioNormal;
-
-              if (esPendiente) {
-                  listaVisa.innerHTML += `
-                    <div class="flex justify-between items-center text-xs py-1.5 border-b border-orange-200 last:border-0 group bg-orange-50/50 px-2 rounded">
-                      <div class="flex flex-col flex-1 pr-2 overflow-hidden">
-                          <span class="text-gray-500 font-medium truncate">${icono} ${fechaProtegida} - ${comercioProtegido}</span>
-                          <span class="text-[9px] text-orange-600 font-bold tracking-wide mt-0.5">⏳ Se cargará el ${p_fecha_cargo}</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-bold ${colorFinal} whitespace-nowrap">${signoMostrado}${valorAbsoluto} €</span>
-                        <button onclick="forzarCobro('${idSeguro}')" class="text-emerald-500 bg-emerald-100 hover:bg-emerald-200 rounded px-1.5 py-0.5 transition-colors shadow-sm" title="Cobrar YA">✅</button>
-                        <button onclick="borrarTicketVisa('${idSeguro}')" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Borrar">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                      </div>
-                    </div>`;
-              } else {
-                  listaVisa.innerHTML += `
-                    <div class="flex justify-between items-center text-xs py-1.5 border-b border-gray-100 last:border-0 group px-1">
-                      <span class="text-gray-700 font-medium truncate pr-2 flex-1">${icono} ${fechaProtegida} - ${comercioProtegido}</span>
-                      <div class="flex items-center gap-1.5">
-                        <span class="font-bold ${colorFinal} whitespace-nowrap">${signoMostrado}${valorAbsoluto} €</span>
-                        <button onclick="borrarTicketVisa('${idSeguro}')" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Borrar ticket">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                      </div>
-                    </div>`;
+        const configGeneracion: any = {
+          response_mime_type: "application/json",
+          temperature: 0.1,
+          response_schema: {
+            type: "OBJECT",
+            properties: {
+              gastos: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    fecha: { type: "STRING" },
+                    comercio: { type: "STRING" },
+                    signo: { type: "STRING" },
+                    importe: { type: "NUMBER" },
+                    es_devolucion: { type: "BOOLEAN" },
+                    fecha_cargo: { type: "STRING" }
+                  },
+                  required: ["fecha", "comercio", "signo", "importe", "es_devolucion", "fecha_cargo"]
+                }
               }
-           }
-        });
-      } else {
-        listaVisa.innerHTML = '<p class="text-xs text-gray-400 text-center py-2 italic">Aún no hay tickets este mes</p>';
-      }
-
-      const listaMeses = document.getElementById('lista-meses-pasados');
-      if (estadoApp.historial_meses && estadoApp.historial_meses.length > 0) {
-        listaMeses.innerHTML = '';
-        [...estadoApp.historial_meses].reverse().forEach((mes, indiceReverso) => {
-          const indiceOriginal = estadoApp.historial_meses.length - 1 - indiceReverso;
-          listaMeses.innerHTML += `
-            <div class="flex items-center bg-gray-50/50 p-3 rounded-xl border border-gray-100 group">
-              <div class="flex-1">
-                <p class="text-xs font-bold text-gray-700">${mes.fecha}</p>
-                <p class="text-xs mt-0.5">Sobrante: <span class="font-bold text-emerald-600">${mes.sobrante}</span></p>
-              </div>
-              <div class="text-right text-[10px] text-gray-400 leading-tight mr-3">
-                Ingreso: ${mes.ingresos}<br>Fijos: -${mes.fijos}<br>Visa: -${mes.tarjetas}
-              </div>
-              <button onclick="borrarMesGuardado(${indiceOriginal})" class="text-red-300 hover:text-red-500 bg-red-50 rounded-md p-1.5 transition-colors shadow-sm" title="Borrar mes">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-              </button>
-            </div>`;
-        });
-      } else {
-        listaMeses.innerHTML = '<p class="text-xs text-gray-400 text-center py-2 italic">No hay meses cerrados todavía</p>';
-      }
-      
-      recalcularTotal();
-    }
-
-    function forzarCobro(idGasto) {
-      if (confirm("¿Marcar como pagado YA? El dinero se restará de tu saldo disponible inmediatamente.")) {
-        let indice = estadoApp.historial_visa.indexOf(idGasto);
-        if (indice !== -1) {
-           let partes = idGasto.split('|');
-           estadoApp.historial_visa[indice] = `${partes[0]}|${partes[1]}|${partes[2]}`;
-           guardarEnNube();
-           dibujarInterfaz();
-        }
-      }
-    }
-
-    function borrarMesGuardado(indice) {
-      if (confirm("¿Estás seguro de que quieres borrar este mes del historial?")) {
-        estadoApp.historial_meses.splice(indice, 1);
-        guardarEnNube();
-        dibujarInterfaz();
-      }
-    }
-
-    function borrarTicketVisa(idGasto) {
-      if (confirm("¿Seguro que quieres borrar este ticket?")) {
-        estadoApp.historial_visa = estadoApp.historial_visa.filter(id => id !== idGasto);
-        guardarEnNube();
-        dibujarInterfaz();
-      }
-    }
-
-    function guardarGasto(id, valor) {
-      let gasto = estadoApp.gastos_fijos.find(g => g.id === id);
-      if (gasto) {
-        gasto.valor = Number(valor);
-        guardarEnNube();
-      }
-    }
-
-    function borrarGasto(id) {
-      if (confirm("¿Estás seguro de que quieres borrar este gasto? Esta acción no se puede deshacer.")) {
-        estadoApp.gastos_fijos = estadoApp.gastos_fijos.filter(g => g.id !== id);
-        guardarEnNube(); 
-        dibujarInterfaz(); 
-      }
-    }
-
-    function guardarNomina(valor) {
-      estadoApp.nomina = Number(valor);
-      guardarEnNube();
-      recalcularTotal();
-    }
-    
-    function recalcularTotal() {
-       let nominaValor = Number(document.getElementById('nomina').value) || 0;
-       let fijosValor = 0;
-       
-       estadoApp.gastos_fijos.forEach(g => { 
-          let caja = document.getElementById('caja-gasto-' + g.id);
-          fijosValor += Number(caja ? caja.value : g.valor);
-       });
-       
-       let sumaVisaReal = 0;
-       estadoApp.historial_visa.forEach(idGasto => {
-            let partes = idGasto.includes('|') ? idGasto.split('|') : idGasto.split('-');
-            let p_precio = Number(idGasto.includes('|') ? partes[2] : partes[partes.length - 1]);
-            let p_fecha = partes[0];
-            let p_fecha_cargo = idGasto.includes('|') ? partes[3] : undefined;
-            if (!esGastoPendiente(p_fecha_cargo, p_fecha)) {
-                sumaVisaReal += p_precio;
-            }
-       });
-
-       estadoApp.saldo_visa = sumaVisaReal; 
-       const formatoEuro = (numero) => numero.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
-
-       document.getElementById('total-ingreso').innerText = formatoEuro(nominaValor);
-       document.getElementById('total-fijos').innerText = formatoEuro(fijosValor);
-       document.getElementById('total-tarjetas').innerText = formatoEuro(estadoApp.saldo_visa);
-       document.getElementById('gasto-visa').innerText = formatoEuro(estadoApp.saldo_visa);
-
-       let saldo = nominaValor - fijosValor - estadoApp.saldo_visa;
-       document.getElementById('saldo-total').innerText = formatoEuro(saldo);
-
-       let tarjeta = document.getElementById('tarjeta-saldo');
-       tarjeta.classList.remove('bg-emerald-500', 'bg-orange-500', 'bg-red-500');
-
-       if (saldo < 300) {
-           tarjeta.classList.add('bg-red-500'); 
-       } else if (saldo < 500) {
-           tarjeta.classList.add('bg-orange-500'); 
-       } else {
-           tarjeta.classList.add('bg-emerald-500'); 
-       }
-    }
-
-    const ventanaModal = document.getElementById('ventana-nuevo-gasto');
-    const inputNuevoNombre = document.getElementById('input-nombre-gasto');
-
-    function abrirVentanaGasto() {
-      inputNuevoNombre.value = ''; 
-      ventanaModal.classList.replace('modal-oculto', 'modal-visible');
-    }
-
-    function cerrarVentanaGasto() {
-      ventanaModal.classList.replace('modal-visible', 'modal-oculto');
-    }
-
-    function confirmarNuevoGasto() {
-      let nombre = inputNuevoNombre.value.trim();
-      if (!nombre) return;
-
-      estadoApp.gastos_fijos.push({
-        id: estadoApp.contador_fijos.toString(),
-        nombre: nombre,
-        valor: 0
-      });
-      estadoApp.contador_fijos++;
-      
-      cerrarVentanaGasto();
-      guardarEnNube();
-      dibujarInterfaz();
-    }
-
-    function empezarMesNuevo() {
-      if(confirm("¿Seguro que quieres cerrar el periodo? Se borrarán los tickets ya cobrados, pero se mantendrán los pendientes (en naranja) para el nuevo mes.")) {
-        let totalIngreso = document.getElementById('total-ingreso').innerText;
-        let totalFijos = document.getElementById('total-fijos').innerText;
-        let totalTarjetas = document.getElementById('total-tarjetas').innerText;
-        let saldoRestante = document.getElementById('saldo-total').innerText;
-        let fechaCierre = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-
-        estadoApp.historial_meses.push({
-          fecha: fechaCierre,
-          ingresos: totalIngreso,
-          fijos: totalFijos,
-          tarjetas: totalTarjetas,
-          sobrante: saldoRestante
-        });
-
-        let textoWhatsApp = `📊 *CIERRE DE CUENTAS - PRESUFÁCIL*\n📅 Fecha: ${fechaCierre}\n\n💰 Ingresos: ${totalIngreso}\n🏠 Gastos Fijos: ${totalFijos}\n💳 Tarjeta: ${totalTarjetas}\n------------------------\n✅ *SALDO SOBRANTE: ${saldoRestante}*\n\n¡Periodo cerrado y reseteado! 🐷`;
-        let urlWhatsApp = `https://api.whatsapp.com/send?text=${encodeURIComponent(textoWhatsApp)}`;
-        
-        if(confirm("Resumen guardado en la App. ¿Quieres enviarlo también por WhatsApp?")) {
-          window.open(urlWhatsApp, '_blank');
+            },
+            required: ["gastos"]
+          }
         }
 
-        estadoApp.historial_visa = estadoApp.historial_visa.filter(idGasto => {
-          if (!idGasto.includes('|')) return false;
-          let partes = idGasto.split('|');
-          return esGastoPendiente(partes[3], partes[0]);
-        });
-
-        guardarEnNube();
-        dibujarInterfaz();
-        
-        if (estadoApp.historial_visa.length > 0) {
-          alert(`¡Mes reiniciado con éxito! Se han conservado ${estadoApp.historial_visa.length} gasto(s) pendiente(s) de cargo para este nuevo mes.`);
-        } else {
-          alert("¡Mes reiniciado con éxito!");
-        }
-      }
-    }
-
-    function añadirGastoManual() {
-      if (!conexionNubeActiva) {
-        alert("⚠️ No puedes añadir gastos sin conexión.");
-        return;
-      }
-      
-      const comercio = document.getElementById('manual-comercio').value.trim();
-      let precioString = document.getElementById('manual-precio').value.replace(',', '.');
-      const precio = Number(precioString) || 0;
-      const fechaInput = document.getElementById('manual-fecha').value; 
-      const fechaCargoInput = document.getElementById('manual-fecha-cargo').value;
-
-      if (!comercio || precio === 0 || !fechaInput) {
-        alert("Por favor, rellena el lugar, el precio y la fecha correcta.");
-        return;
-      }
-
-      const partesFecha = fechaInput.split('-');
-      const fechaFormateada = `${partesFecha[2]}/${partesFecha[1]}`;
-      
-      let fechaCargoFormateada = "";
-      if (fechaCargoInput) {
-          const partesCargo = fechaCargoInput.split('-');
-          fechaCargoFormateada = `${partesCargo[2]}/${partesCargo[1]}`;
-      }
-
-      let comercioBase = comercio.replace(/\s+/g, '').replace(/[|'"]/g, '').toLowerCase();
-      let comercioDNI = comercioBase;
-      let coreID = `${fechaFormateada}|${comercioDNI}|${precio}`;
-
-      const yaExiste = estadoApp.historial_visa.some(idGuardado => idGuardado === coreID || idGuardado.startsWith(coreID + "|"));
-
-      if (yaExiste) {
-        const confirmarDuplicado = confirm(`⚠️ Ya tienes apuntado un gasto de ${precio}€ en ${comercio} el día ${fechaFormateada}.\n\n¿Es una segunda compra real del mismo día y quieres añadirla igualmente?`);
-        if (!confirmarDuplicado) return;
-        let contador = 2;
-        while (estadoApp.historial_visa.some(idGuardado => {
-          let idPrueba = `${fechaFormateada}|${comercioBase}(${contador})|${precio}`;
-          return idGuardado === idPrueba || idGuardado.startsWith(idPrueba + "|");
-        })) {
-          contador++;
-        }
-        comercioDNI = `${comercioBase}(${contador})`;
-        coreID = `${fechaFormateada}|${comercioDNI}|${precio}`;
-      }
-
-      const idGastoInterno = fechaCargoFormateada ? `${coreID}|${fechaCargoFormateada}` : coreID;
-      estadoApp.historial_visa.push(idGastoInterno);
-      
-      guardarEnNube();
-      dibujarInterfaz();
-      
-      document.getElementById('manual-comercio').value = '';
-      document.getElementById('manual-precio').value = '';
-      document.getElementById('manual-fecha-cargo').value = ''; 
-      alert(`✅ Movimiento guardado con éxito.`);
-    }
-
-    const btnFoto = document.getElementById('btn-foto');
-    const inputFoto = document.getElementById('input-foto');
-    
-    btnFoto.addEventListener('click', () => {
-      if (!conexionNubeActiva) {
-        alert("⚠️ No puedes subir fotos sin conexión a internet.");
-        return;
-      }
-      inputFoto.click();
-    });
-
-    inputFoto.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      btnFoto.innerHTML = "⏳ Leyendo e identificando...";
-      btnFoto.classList.replace('bg-blue-600', 'bg-gray-500');
-
-      try {
-        const base64Image = await convertirABase64(file);
-        const urlFuncion = `${SUPABASE_URL}/functions/v1/leer-ticket`;
-        
-        const respuesta = await fetch(urlFuncion, {
+        const response = await fetch(urlBase + modelo + ':generateContent?key=' + GEMINI_API_KEY, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
           },
-          body: JSON.stringify({ imagen: base64Image })
-        });
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: imagen
+                  }
+                },
+                {
+                  text: `Extrae todos los movimientos bancarios que aparecen en esta captura de pantalla.
 
-        const gastos = await respuesta.json();
-        
-        if (gastos.error || gastos.message || (!Array.isArray(gastos) && !gastos.gastos)) {
-          alert("⚠️ ERROR DEL SERVIDOR:\n" + JSON.stringify(gastos, null, 2));
-          return; 
+Reglas de extracción:
+1. Ignora cualquier movimiento que diga "Denegado", "Anulado" o que tenga el importe tachado. Ignora también los textos que dicen "Fraccionar pago" o algo similar.
+2. "fecha": Formato "DD/MM". Si pone "Hoy", usa el día ${diaActual}. Si solo ves el día (ej: "Lunes 19" o "Viernes 16"): hoy es día ${diaActual}. Si el día del movimiento es MAYOR que ${diaActual}, pon el mes "${mesAnterior}". Si es MENOR O IGUAL que ${diaActual}, pon el mes "${mesActual}". (Nota: si un movimiento no tiene fecha encima, usa la misma fecha del movimiento que tiene justo arriba).
+3. "comercio": Nombre de la tienda limpio (ej: "Farmacia Constitucion", "Mercadona Parque Guadaira").
+4. "signo": Pon "+" si lleva un signo más, está en color verde o dice "Abonado" debajo. Pon "-" si lleva un signo menos.
+5. "importe": El número siempre en positivo con punto decimal (ej: 33.34 o 0.57).
+6. "es_devolucion": Pon true si "signo" es "+". Pon false si "signo" es "-".
+7. "fecha_cargo": Si debajo del comercio dice "Se cargará el...", pon esa fecha en formato "DD/MM". Para saber qué mes poner en "fecha_cargo", toma como base el mes que hayas puesto en "fecha" (la fecha de compra): si el día de cargo es MENOR que el día de compra, súmale 1 al mes de compra (ej: si la compra es de "09", el cargo es "10"; si es "12", el cargo es "01"). Si el día de cargo es MAYOR O IGUAL que el día de compra, usa el mismo mes de la compra. Si no hay aviso de cobro futuro, pon "".`
+                }
+              ]
+            }],
+            generationConfig: configGeneracion
+          })
+        })
+
+        const resJson = await response.json()
+
+        if (resJson.error) {
+          registroDebug.push(modelo + ": " + resJson.error.message)
+          continue
         }
 
-        let listaGastos = Array.isArray(gastos) ? gastos : (gastos.gastos || []);
+        const candidates = resJson.candidates?.[0]?.content?.parts || []
+        const partTexto = candidates.find((p: any) => p.text)
 
-        if (listaGastos.length > 0) {
-          let gastosAceptados = 0;
-          let gastosIgnorados = 0;
-          let mensaje = "Resultado de la lectura:\n\n";
-          let aparicionesEnEstaFoto = {};
+        if (partTexto && partTexto.text) {
+          let rawText = partTexto.text.trim()
+          rawText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim()
+          registroDebug.push(modelo + ": " + rawText)
 
-          listaGastos.forEach(gasto => {
-            let importeLimpio = String(gasto.importe).replace(',', '.');
-            let importeNumero = Number(importeLimpio) || 0; 
-            
-            const fechaDNI = String(gasto.fecha).trim();
-            const comercioBase = String(gasto.comercio).replace(/\s+/g, '').replace(/[|'"]/g, '').toLowerCase();
-            let p_fecha_cargo = gasto.fecha_cargo ? String(gasto.fecha_cargo).trim() : "";
+          let parsed = JSON.parse(rawText)
+          let listaExtraida = parsed?.gastos || (Array.isArray(parsed) ? parsed : null)
 
-            const claveFoto = `${fechaDNI}|${comercioBase}|${importeNumero}`;
-            aparicionesEnEstaFoto[claveFoto] = (aparicionesEnEstaFoto[claveFoto] || 0) + 1;
+          if (listaExtraida !== null) {
+            const procesados = listaExtraida.map((g: any) => {
+              let textoImporte = String(g.importe || "").trim();
+              let numLimpio = Math.abs(Number(textoImporte.replace(',', '.').replace(/[€\s+-]/g, '')) || 0);
+              let tieneSignoMas = String(g.signo || "").trim() === '+' || textoImporte.startsWith('+');
+              let diceTrue = g.es_devolucion === true || String(g.es_devolucion).toLowerCase().trim() === 'true';
+              let esDevolucion = diceTrue || tieneSignoMas;
 
-            const comercioDNI = aparicionesEnEstaFoto[claveFoto] > 1 
-              ? `${comercioBase}(${aparicionesEnEstaFoto[claveFoto]})` 
-              : comercioBase;
+              return {
+                fecha: normalizarFecha(g.fecha),
+                comercio: String(g.comercio || "Comercio").trim(),
+                importe: esDevolucion ? -numLimpio : numLimpio,
+                fecha_cargo: normalizarFecha(g.fecha_cargo)
+              };
+            }).filter((g: any) => g.importe !== 0);
 
-            const coreID = `${fechaDNI}|${comercioDNI}|${importeNumero}`;
-            const idGastoInterno = p_fecha_cargo ? `${coreID}|${p_fecha_cargo}` : coreID;
-
-            const yaExiste = estadoApp.historial_visa.some(idGuardado => idGuardado === coreID || idGuardado.startsWith(coreID + "|"));
-
-            if (yaExiste) {
-              gastosIgnorados++; 
-            } else {
-              estadoApp.historial_visa.push(idGastoInterno);
-              gastosAceptados++;
-              mensaje += `✅ Nuevo: ${obtenerIcono(gasto.comercio)} ${gasto.fecha} | ${gasto.comercio} | ${importeNumero.toFixed(2)} €\n`;
-            }
-          });
-
-          if (gastosAceptados > 0) {
-            guardarEnNube(); 
-            dibujarInterfaz();
+            arrayFinal = procesados;
+            lecturaExitosa = true;
+            break;
           }
-          
-          mensaje += `\nResumen: ${gastosAceptados} nuevos añadidos, ${gastosIgnorados} repetidos ignorados.\n`;
-          alert(mensaje);
-
-        } else {
-          alert("Gemini no ha detectado ningún movimiento válido en la imagen.");
         }
-      } catch (error) {
-        alert("⚠️ Fallo al procesar o enviar la foto en el móvil:\n" + (error.message || error));
-      } finally {
-        btnFoto.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Subir Captura de Tarjeta`;
-        btnFoto.classList.replace('bg-gray-500', 'bg-blue-600');
-        inputFoto.value = "";
+      } catch (errModelo: any) {
+        registroDebug.push(modelo + " (Fallo lectura): " + errModelo.message)
       }
-    });
-
-    function convertirABase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const resultado = reader.result.split(',')[1];
-          if (!resultado || resultado.length < 100) {
-            reject(new Error("Fallo al leer el archivo en el móvil."));
-          } else {
-            resolve(resultado);
-          }
-        };
-        reader.onerror = () => reject(new Error("Error al abrir la foto desde la galería."));
-        reader.readAsDataURL(file);
-      });
     }
-  </script>
-</body>
-</html>
+
+    if (!lecturaExitosa) {
+      throw new Error("Diagnóstico: " + registroDebug.join(" | "))
+    }
+
+    return new Response(JSON.stringify(arrayFinal), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
+  }
+})
