@@ -41,19 +41,22 @@
       <div class="space-y-4">
         <div>
           <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Nombre de Usuario</label>
-          <input type="text" id="login-usuario" placeholder="Ej: pedro, maria..." 
+          <input type="text" id="login-usuario" placeholder="Ej: pedro, maria..." autocomplete="username"
+                 onkeydown="if(event.key==='Enter') iniciarSesion()"
                  class="w-full border border-gray-300 rounded-lg p-3 text-sm outline-none focus:border-emerald-500">
         </div>
         <div>
-          <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Contraseña (mín. 6 caracteres)</label>
-          <input type="password" id="login-password" placeholder="••••••" 
+          <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Contraseña (mín. 8 caracteres)</label>
+          <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"
+                 onkeydown="if(event.key==='Enter') iniciarSesion()"
                  class="w-full border border-gray-300 rounded-lg p-3 text-sm outline-none focus:border-emerald-500">
         </div>
 
         <!-- Casilla de código secreto para nuevos registros -->
         <div class="bg-amber-50/70 p-3 rounded-xl border border-amber-200/80">
           <label class="block text-[11px] font-bold text-amber-800 uppercase mb-1">🔑 Código de Invitación (Solo si eres nuevo)</label>
-          <input type="text" id="login-codigo" placeholder="Escribe el código que te han dado" 
+          <input type="text" id="login-codigo" placeholder="Escribe el código que te han dado"
+                 onkeydown="if(event.key==='Enter') registrarUsuario()"
                  class="w-full border border-amber-300 rounded-lg p-2.5 text-sm outline-none focus:border-amber-500 bg-white">
         </div>
 
@@ -133,7 +136,7 @@
       <div class="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-2">
         <span class="text-gray-400 pl-2 pr-1 font-bold">€</span>
         <input type="number" id="nomina" value="0" step="0.01" class="w-full bg-transparent outline-none font-bold text-gray-800 text-lg" 
-               oninput="recalcularTotal()" onchange="guardarNomina(this.value)">
+               oninput="recalcularTotal(); programarGuardado();" onchange="guardarNomina(this.value)">
       </div>
     </div>
 
@@ -231,7 +234,9 @@
   <div id="ventana-nuevo-gasto" class="modal-oculto fixed inset-0 bg-black bg-opacity-50 z-50 items-center justify-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl relative">
       <h3 class="text-lg font-bold text-gray-800 mb-4">Añadir Nuevo Gasto Fijo</h3>
-      <input type="text" id="input-nombre-gasto" placeholder="Ejemplo: Netflix, Gimnasio..." class="w-full border border-gray-300 rounded-lg p-3 text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-6">
+      <input type="text" id="input-nombre-gasto" placeholder="Ejemplo: Netflix, Gimnasio..."
+             onkeydown="if(event.key==='Enter') confirmarNuevoGasto()"
+             class="w-full border border-gray-300 rounded-lg p-3 text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-6">
       <div class="flex gap-3 justify-end">
         <button onclick="cerrarVentanaGasto()" class="px-4 py-2 text-gray-500 font-semibold hover:bg-gray-100 rounded-lg">Cancelar</button>
         <button onclick="confirmarNuevoGasto()" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow-sm">Añadir a la nube</button>
@@ -285,6 +290,7 @@
     const supabaseCliente = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let usuarioActual = null;
     let conexionNubeActiva = false;
+    let temporizadorGuardado = null;
 
     function obtenerEstadoPorDefecto() {
       return {
@@ -304,9 +310,42 @@
 
     let estadoApp = obtenerEstadoPorDefecto();
 
+    // --- FUNCIONES DE SEGURIDAD Y FORMATO ---
+    function textoSeguro(texto) {
+      const div = document.createElement('div');
+      div.textContent = texto !== undefined && texto !== null ? String(texto) : '';
+      return div.innerHTML
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // Escapa primero las barras y comillas para parámetros dentro de onclick="..."
+    function argumentoJsSeguro(texto) {
+      const cadena = texto !== undefined && texto !== null ? String(texto) : '';
+      const escapadoJs = cadena
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\r?\n/g, ' ');
+      return textoSeguro(escapadoJs);
+    }
+
+    // Asegura formato DD/MM con ceros a la izquierda (ej: 5/3 -> 05/03)
+    function normalizarFechaCorto(fechaStr) {
+      if (!fechaStr) return "";
+      const limpio = String(fechaStr).trim().replace(/[|'"]/g, '');
+      if (!limpio.includes('/')) return "";
+      const partes = limpio.split('/');
+      if (partes.length < 2) return "";
+      const diaNum = parseInt(partes[0].trim(), 10);
+      const mesNum = parseInt(partes[1].trim(), 10);
+      if (isNaN(diaNum) || isNaN(mesNum) || diaNum < 1 || diaNum > 31 || mesNum < 1 || mesNum > 12) {
+        return "";
+      }
+      return `${String(diaNum).padStart(2, '0')}/${String(mesNum).padStart(2, '0')}`;
+    }
+
     // --- LÓGICA DE USUARIOS Y CONTRASEÑAS ---
-   function convertirUsuarioACorreo(usuarioInput) {
-      // Solo permitimos letras, números, puntos, guiones y arroba
+    function convertirUsuarioACorreo(usuarioInput) {
       let limpio = usuarioInput.trim().toLowerCase().replace(/[^a-z0-9._@-]/g, '');
       if (!limpio.includes('@')) {
         return limpio + '@presufacil.com';
@@ -326,7 +365,7 @@
     }
 
     async function iniciarSesion() {
-      const usu = document.getElementById('login-usuario').value;
+      const usu = document.getElementById('login-usuario').value.trim();
       const pass = document.getElementById('login-password').value;
       if (!usu || !pass) {
         mostrarMensajeLogin("Por favor, escribe tu usuario y contraseña.");
@@ -347,12 +386,12 @@
     }
 
     async function registrarUsuario() {
-      const usu = document.getElementById('login-usuario').value;
+      const usu = document.getElementById('login-usuario').value.trim();
       const pass = document.getElementById('login-password').value;
       const codigoSecreto = document.getElementById('login-codigo').value.trim();
 
-      if (!usu || pass.length < 6) {
-        mostrarMensajeLogin("Escribe un nombre de usuario y una contraseña de al menos 6 caracteres.");
+      if (!usu || pass.length < 8) {
+        mostrarMensajeLogin("Escribe un nombre de usuario y una contraseña de al menos 8 caracteres.");
         return;
       }
 
@@ -373,12 +412,15 @@
       });
 
       if (error) {
-        if (error.message.includes("already registered")) {
-          mostrarMensajeLogin("⚠️ Ese nombre de usuario ya está ocupado. Elige otro o pulsa en 'Entrar'.");
-        } else if (error.message.includes("CODIGO_INVALIDO") || error.message.includes("Database error")) {
-          mostrarMensajeLogin("❌ Código de invitación incorrecto. Pídele el código actual al administrador.");
+        // Mensaje unificado para no revelar a desconocidos qué usuarios existen
+        if (
+          error.message.includes("already registered") ||
+          error.message.includes("CODIGO_INVALIDO") ||
+          error.message.includes("Database error")
+        ) {
+          mostrarMensajeLogin("❌ Código de invitación incorrecto o nombre de usuario no disponible.");
         } else {
-          mostrarMensajeLogin("⚠️ Error: " + error.message);
+          mostrarMensajeLogin("⚠️ No se pudo crear la cuenta. Revisa los datos e inténtalo de nuevo.");
         }
       } else if (data.user) {
         mostrarMensajeLogin("✅ ¡Cuenta creada con éxito! Entrando...", false);
@@ -388,9 +430,31 @@
     }
 
     async function cerrarSesion() {
+      if (temporizadorGuardado) {
+        clearTimeout(temporizadorGuardado);
+        temporizadorGuardado = null;
+      }
       await supabaseCliente.auth.signOut();
       usuarioActual = null;
+      conexionNubeActiva = false;
       estadoApp = obtenerEstadoPorDefecto();
+
+      // Limpiamos todos los datos sensibles del HTML antes de salir
+      document.getElementById('nombre-usuario-actual').innerText = '';
+      document.getElementById('nomina').value = '0';
+      document.getElementById('lista-gastos-fijos').innerHTML = '';
+      document.getElementById('lista-movimientos-visa').innerHTML = '';
+      document.getElementById('lista-meses-pasados').innerHTML = '';
+      document.getElementById('lista-usuarios-admin').innerHTML = '';
+      document.getElementById('input-codigo-admin').value = '';
+      document.getElementById('saldo-total').innerText = '0,00 €';
+      document.getElementById('total-ingreso').innerText = '0,00 €';
+      document.getElementById('total-fijos').innerText = '0,00 €';
+      document.getElementById('total-tarjetas').innerText = '0,00 €';
+      document.getElementById('gasto-visa').innerText = '0,00 €';
+
+      cerrarPanelAdmin();
+      cerrarVentanaGasto();
       document.getElementById('btn-abrir-admin').classList.add('hidden');
       document.getElementById('contenido-app').classList.add('hidden');
       document.getElementById('pantalla-login').classList.remove('hidden');
@@ -432,7 +496,6 @@
 
         const btnAdmin = document.getElementById('btn-abrir-admin');
         if (!error && data) {
-          // Si Supabase nos deja leer esta tabla, es que somos el Administrador
           btnAdmin.classList.remove('hidden');
           document.getElementById('input-codigo-admin').value = data.codigo_invitacion;
         } else {
@@ -478,8 +541,7 @@
       const { data: listaUsuarios, error } = await supabaseCliente.rpc('listar_usuarios_admin');
 
       if (error) {
-        // AHORA MOSTRAMOS EL ERROR EXACTO EN ROJO
-        contenedor.innerHTML = `<p class="text-xs text-red-500 text-center py-4 font-bold">❌ Error: ${error.message}</p>`;
+        contenedor.innerHTML = `<p class="text-xs text-red-500 text-center py-4 font-bold">❌ Error: ${textoSeguro(error.message)}</p>`;
         return;
       }
 
@@ -490,19 +552,21 @@
       }
 
       listaUsuarios.forEach(u => {
-        const nombreLimpio = textoSeguro(u.email.replace('@presufacil.com', ''));
-        const idUsuarioSeguro = textoSeguro(u.id).replace(/'/g, "\\'");
+        const nombreSinDominio = String(u.email || '').replace('@presufacil.com', '');
+        const nombreLimpioHtml = textoSeguro(nombreSinDominio);
+        const nombreLimpioJs = argumentoJsSeguro(nombreSinDominio);
+        const idUsuarioSeguroJs = argumentoJsSeguro(u.id);
         const fechaCreacion = new Date(u.creado).toLocaleDateString('es-ES');
         const esMiCuenta = usuarioActual && u.id === usuarioActual.id;
 
         contenedor.innerHTML += `
           <div class="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-200">
             <div>
-              <p class="text-xs font-bold text-gray-800">👤 ${nombreLimpio} ${esMiCuenta ? '<span class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded ml-1">Tú (Admin)</span>' : ''}</p>
-              <p class="text-[10px] text-gray-400">Creado el ${fechaCreacion}</p>
+              <p class="text-xs font-bold text-gray-800">👤 ${nombreLimpioHtml} ${esMiCuenta ? '<span class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded ml-1">Tú (Admin)</span>' : ''}</p>
+              <p class="text-[10px] text-gray-400">Creado el ${textoSeguro(fechaCreacion)}</p>
             </div>
             ${esMiCuenta ? '' : `
-              <button onclick="borrarCuentaUsuario('${idUsuarioSeguro}', '${nombreLimpio}')" class="bg-red-50 text-red-500 hover:bg-red-500 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors shadow-sm">
+              <button onclick="borrarCuentaUsuario('${idUsuarioSeguroJs}', '${nombreLimpioJs}')" class="bg-red-50 text-red-500 hover:bg-red-500 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors shadow-sm">
                 Eliminar 🗑️
               </button>
             `}
@@ -564,7 +628,19 @@
       }
     }
 
+    function programarGuardado() {
+      if (!conexionNubeActiva || !usuarioActual) return;
+      if (temporizadorGuardado) clearTimeout(temporizadorGuardado);
+      temporizadorGuardado = setTimeout(() => {
+        guardarEnNube();
+      }, 800);
+    }
+
     async function guardarEnNube() {
+      if (temporizadorGuardado) {
+        clearTimeout(temporizadorGuardado);
+        temporizadorGuardado = null;
+      }
       if (!conexionNubeActiva || !usuarioActual) {
         alert("⚠️ Estás sin conexión. Por seguridad, no se pueden guardar cambios hasta que vuelva internet.");
         return;
@@ -580,21 +656,16 @@
           );
 
         if (error) throw error;
-        setTimeout(() => { document.getElementById('estado-nube').innerText = "☁️ Sincronizado"; }, 800);
+        setTimeout(() => {
+          const badge = document.getElementById('estado-nube');
+          if (badge) badge.innerText = "☁️ Sincronizado";
+        }, 800);
       } catch (error) {
         console.error("Error al guardar en la nube", error);
       }
     }
 
     // --- FUNCIONES DE LA APLICACIÓN ---
-    function textoSeguro(texto) {
-      const div = document.createElement('div');
-      div.textContent = texto !== undefined && texto !== null ? String(texto) : '';
-      return div.innerHTML
-       .replace(/"/g, '&quot;')
-       .replace(/'/g, '&#39;');
-    }
-
     function ordenarTicketsPorFecha(listaTickets) {
       const hoy = new Date();
       const mesActual = hoy.getMonth() + 1;
@@ -618,11 +689,12 @@
     }
 
     function esGastoPendiente(p_fecha_cargo, p_fecha_compra) {
-      if (!p_fecha_cargo) return false;
+      if (!p_fecha_cargo || !p_fecha_cargo.includes('/')) return false;
       
       let fParts = p_fecha_cargo.split('/');
       let diaCargo = parseInt(fParts[0], 10);
       let mesCargo = parseInt(fParts[1], 10);
+      if (isNaN(diaCargo) || isNaN(mesCargo)) return false;
       
       let hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
@@ -633,7 +705,8 @@
         let mesCompra = parseInt(cParts[1], 10);
         
         if (mesCompra > mesCargo) {
-          if (hoy.getMonth() + 1 === mesCompra) {
+          // Si la compra fue a final de año (ej: nov/dic) y el cargo es en el año siguiente (ej: ene)
+          if (hoy.getMonth() + 1 >= mesCompra) {
             anioCargo = hoy.getFullYear() + 1;
           }
         } else {
@@ -672,7 +745,8 @@
       
       estadoApp.gastos_fijos.forEach(gasto => {
         const nombreProtegido = textoSeguro(gasto.nombre);
-        const idGastoFijoSeguro = textoSeguro(gasto.id).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+        const idGastoAttr = textoSeguro(gasto.id);
+        const idGastoJs = argumentoJsSeguro(gasto.id);
         const valorSeguro = Number(gasto.valor) || 0;
 
         let html = `
@@ -680,13 +754,13 @@
           <span class="text-sm font-semibold text-gray-700 truncate flex-1 pr-2">${obtenerIcono(gasto.nombre)} ${nombreProtegido}</span>
           <div class="flex items-center gap-2">
             <div class="flex items-center gap-1 bg-gray-100 px-2 py-1.5 rounded-lg border border-gray-200 shadow-inner">
-              <input type="number" id="caja-gasto-${idGastoFijoSeguro}" step="0.01" value="${valorSeguro}" 
+              <input type="number" id="caja-gasto-${idGastoAttr}" step="0.01" value="${valorSeguro}" 
                      class="w-14 bg-transparent text-right outline-none text-gray-800 font-bold text-base" 
-                     oninput="recalcularTotal()" 
-                     onchange="guardarGasto('${idGastoFijoSeguro}', this.value)">
+                     oninput="recalcularTotal(); programarGuardado();" 
+                     onchange="guardarGasto('${idGastoJs}', this.value)">
               <span class="text-gray-400 font-bold text-sm">€</span>
             </div>
-            <button onclick="borrarGasto('${idGastoFijoSeguro}')" class="text-red-300 hover:text-red-500 bg-red-50 rounded-md p-1.5 transition-colors shadow-sm">
+            <button onclick="borrarGasto('${idGastoJs}')" class="text-red-300 hover:text-red-500 bg-red-50 rounded-md p-1.5 transition-colors shadow-sm">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </button>
           </div>
@@ -719,10 +793,10 @@
               const comercioProtegido = textoSeguro(String(p_comercio || '').toUpperCase());
               const fechaProtegida = textoSeguro(p_fecha);
               const fechaCargoProtegida = textoSeguro(p_fecha_cargo || "");
-              const idSeguro = textoSeguro(idGasto).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+              const idSeguroJs = argumentoJsSeguro(idGasto);
               let esPendiente = esGastoPendiente(p_fecha_cargo, p_fecha);
               
-              let valorNumerico = Number(p_precio);
+              let valorNumerico = Number(p_precio) || 0;
               let esDevolucion = valorNumerico < 0;
               let valorAbsoluto = Math.abs(valorNumerico).toFixed(2).replace('.', ',');
               let signoMostrado = esDevolucion ? "+" : "-";
@@ -740,8 +814,8 @@
                       </div>
                       <div class="flex items-center gap-2">
                         <span class="font-bold ${colorFinal} whitespace-nowrap">${signoMostrado}${valorAbsoluto} €</span>
-                        <button onclick="forzarCobro('${idSeguro}')" class="text-emerald-500 bg-emerald-100 hover:bg-emerald-200 rounded px-1.5 py-0.5 transition-colors shadow-sm" title="Cobrar YA">✅</button>
-                        <button onclick="borrarTicketVisa('${idSeguro}')" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Borrar">
+                        <button onclick="forzarCobro('${idSeguroJs}')" class="text-emerald-500 bg-emerald-100 hover:bg-emerald-200 rounded px-1.5 py-0.5 transition-colors shadow-sm" title="Cobrar YA">✅</button>
+                        <button onclick="borrarTicketVisa('${idSeguroJs}')" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Borrar">
                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                       </div>
@@ -752,7 +826,7 @@
                       <span class="text-gray-700 font-medium truncate pr-2 flex-1">${icono} ${fechaProtegida} - ${comercioProtegido}</span>
                       <div class="flex items-center gap-1.5">
                         <span class="font-bold ${colorFinal} whitespace-nowrap">${signoMostrado}${valorAbsoluto} €</span>
-                        <button onclick="borrarTicketVisa('${idSeguro}')" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Borrar ticket">
+                        <button onclick="borrarTicketVisa('${idSeguroJs}')" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Borrar ticket">
                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                       </div>
@@ -784,7 +858,7 @@
               <div class="text-right text-[10px] text-gray-400 leading-tight mr-3">
                 Ingreso: ${mesIngresosSeguro}<br>Fijos: -${mesFijosSeguro}<br>Visa: -${mesTarjetasSeguro}
               </div>
-              <button onclick="borrarMesGuardado(${indiceOriginal})" class="text-red-300 hover:text-red-500 bg-red-50 rounded-md p-1.5 transition-colors shadow-sm" title="Borrar mes">
+              <button onclick="borrarMesGuardado(${Number(indiceOriginal)})" class="text-red-300 hover:text-red-500 bg-red-50 rounded-md p-1.5 transition-colors shadow-sm" title="Borrar mes">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
               </button>
             </div>`;
@@ -827,7 +901,7 @@
     function guardarGasto(id, valor) {
       let gasto = estadoApp.gastos_fijos.find(g => g.id === id);
       if (gasto) {
-        gasto.valor = Number(valor);
+        gasto.valor = Number(valor) || 0;
         guardarEnNube();
       }
     }
@@ -841,24 +915,28 @@
     }
 
     function guardarNomina(valor) {
-      estadoApp.nomina = Number(valor);
+      estadoApp.nomina = Number(valor) || 0;
       guardarEnNube();
       recalcularTotal();
     }
     
     function recalcularTotal() {
        let nominaValor = Number(document.getElementById('nomina').value) || 0;
+       estadoApp.nomina = nominaValor;
        let fijosValor = 0;
        
        estadoApp.gastos_fijos.forEach(g => { 
           let caja = document.getElementById('caja-gasto-' + g.id);
-          fijosValor += Number(caja ? caja.value : g.valor);
+          if (caja) {
+            g.valor = Number(caja.value) || 0;
+          }
+          fijosValor += Number(g.valor) || 0;
        });
        
        let sumaVisaReal = 0;
        estadoApp.historial_visa.forEach(idGasto => {
             let partes = idGasto.includes('|') ? idGasto.split('|') : idGasto.split('-');
-            let p_precio = Number(idGasto.includes('|') ? partes[2] : partes[partes.length - 1]);
+            let p_precio = Number(idGasto.includes('|') ? partes[2] : partes[partes.length - 1]) || 0;
             let p_fecha = partes[0];
             let p_fecha_cargo = idGasto.includes('|') ? partes[3] : undefined;
             if (!esGastoPendiente(p_fecha_cargo, p_fecha)) {
@@ -975,12 +1053,12 @@
       }
 
       const partesFecha = fechaInput.split('-');
-      const fechaFormateada = `${partesFecha[2]}/${partesFecha[1]}`;
+      const fechaFormateada = normalizarFechaCorto(`${partesFecha[2]}/${partesFecha[1]}`);
       
       let fechaCargoFormateada = "";
       if (fechaCargoInput) {
           const partesCargo = fechaCargoInput.split('-');
-          fechaCargoFormateada = `${partesCargo[2]}/${partesCargo[1]}`;
+          fechaCargoFormateada = normalizarFechaCorto(`${partesCargo[2]}/${partesCargo[1]}`);
       }
 
       let comercioBase = comercio.replace(/\s+/g, '').replace(/[|'"]/g, '').toLowerCase();
@@ -1037,7 +1115,6 @@
         const base64Image = await convertirABase64(file);
         const urlFuncion = `${SUPABASE_URL}/functions/v1/leer-ticket`;
 
-        // --- SOLUCIÓN FALLO 2: Obtenemos el carnet privado de la sesión del usuario ---
         const { data: { session } } = await supabaseCliente.auth.getSession();
         if (!session) {
           throw new Error("Tu sesión ha caducado. Por favor, cierra sesión y vuelve a entrar.");
@@ -1069,12 +1146,14 @@
           let aparicionesEnEstaFoto = {};
 
           listaGastos.forEach(gasto => {
-            let importeLimpio = String(gasto.importe).replace(',', '.');
+            let importeLimpio = String(gasto.importe ?? '').replace(',', '.');
             let importeNumero = Number(importeLimpio) || 0; 
             
-            const fechaDNI = String(gasto.fecha).trim();
-            const comercioBase = String(gasto.comercio).replace(/\s+/g, '').replace(/[|'"]/g, '').toLowerCase();
-            let p_fecha_cargo = gasto.fecha_cargo ? String(gasto.fecha_cargo).trim() : "";
+            const fechaDNI = normalizarFechaCorto(gasto.fecha);
+            const comercioBase = String(gasto.comercio || '').replace(/\s+/g, '').replace(/[|'"]/g, '').toLowerCase();
+            let p_fecha_cargo = normalizarFechaCorto(gasto.fecha_cargo);
+
+            if (!fechaDNI || !comercioBase || importeNumero === 0) return;
 
             const claveFoto = `${fechaDNI}|${comercioBase}|${importeNumero}`;
             aparicionesEnEstaFoto[claveFoto] = (aparicionesEnEstaFoto[claveFoto] || 0) + 1;
@@ -1093,7 +1172,8 @@
             } else {
               estadoApp.historial_visa.push(idGastoInterno);
               gastosAceptados++;
-              mensaje += `✅ Nuevo: ${obtenerIcono(gasto.comercio)} ${gasto.fecha} | ${gasto.comercio} | ${importeNumero.toFixed(2)} €\n`;
+              const comercioMostrar = String(gasto.comercio || '').replace(/[|'"]/g, '').trim();
+              mensaje += `✅ Nuevo: ${obtenerIcono(comercioMostrar)} ${fechaDNI} | ${comercioMostrar} | ${importeNumero.toFixed(2)} €\n`;
             }
           });
 
@@ -1117,16 +1197,53 @@
       }
     });
 
+    // Comprime y redimensiona la imagen en el móvil antes de enviarla para evitar fallos de red
     function convertirABase64(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => {
-          const resultado = reader.result.split(',')[1];
-          if (!resultado || resultado.length < 100) {
-            reject(new Error("Fallo al leer el archivo en el móvil."));
-          } else {
-            resolve(resultado);
-          }
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              const maxDimension = 1400;
+              let ancho = img.width;
+              let alto = img.height;
+
+              if (ancho > maxDimension || alto > maxDimension) {
+                if (ancho > alto) {
+                  alto = Math.round((alto * maxDimension) / ancho);
+                  ancho = maxDimension;
+                } else {
+                  ancho = Math.round((ancho * maxDimension) / alto);
+                  alto = maxDimension;
+                }
+              }
+
+              canvas.width = ancho;
+              canvas.height = alto;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, ancho, alto);
+
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+              const resultado = dataUrl.split(',')[1];
+              if (!resultado || resultado.length < 100) {
+                reject(new Error("Fallo al comprimir la imagen en el móvil."));
+              } else {
+                resolve(resultado);
+              }
+            } catch (errCanvas) {
+              // Si por algún motivo falla el canvas, enviamos el Base64 original como respaldo
+              const respaldo = String(e.target.result || '').split(',')[1];
+              if (respaldo && respaldo.length >= 100) {
+                resolve(respaldo);
+              } else {
+                reject(new Error("Fallo al leer el archivo en el móvil."));
+              }
+            }
+          };
+          img.onerror = () => reject(new Error("El archivo seleccionado no es una imagen válida."));
+          img.src = e.target.result;
         };
         reader.onerror = () => reject(new Error("Error al abrir la foto desde la galería."));
         reader.readAsDataURL(file);
