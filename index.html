@@ -1197,53 +1197,17 @@
       }
     });
 
-    // Comprime y redimensiona la imagen en el móvil antes de enviarla para evitar fallos de red
+    // Sube la captura de pantalla exactamente con su calidad y resolución original
     function convertirABase64(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              const maxDimension = 1400;
-              let ancho = img.width;
-              let alto = img.height;
-
-              if (ancho > maxDimension || alto > maxDimension) {
-                if (ancho > alto) {
-                  alto = Math.round((alto * maxDimension) / ancho);
-                  ancho = maxDimension;
-                } else {
-                  ancho = Math.round((ancho * maxDimension) / alto);
-                  alto = maxDimension;
-                }
-              }
-
-              canvas.width = ancho;
-              canvas.height = alto;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, ancho, alto);
-
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-              const resultado = dataUrl.split(',')[1];
-              if (!resultado || resultado.length < 100) {
-                reject(new Error("Fallo al comprimir la imagen en el móvil."));
-              } else {
-                resolve(resultado);
-              }
-            } catch (errCanvas) {
-              // Si por algún motivo falla el canvas, enviamos el Base64 original como respaldo
-              const respaldo = String(e.target.result || '').split(',')[1];
-              if (respaldo && respaldo.length >= 100) {
-                resolve(respaldo);
-              } else {
-                reject(new Error("Fallo al leer el archivo en el móvil."));
-              }
-            }
-          };
-          img.onerror = () => reject(new Error("El archivo seleccionado no es una imagen válida."));
-          img.src = e.target.result;
+        reader.onload = () => {
+          const resultado = reader.result.split(',')[1];
+          if (!resultado || resultado.length < 100) {
+            reject(new Error("Fallo al leer el archivo en el móvil."));
+          } else {
+            resolve(resultado);
+          }
         };
         reader.onerror = () => reject(new Error("Error al abrir la foto desde la galería."));
         reader.readAsDataURL(file);
